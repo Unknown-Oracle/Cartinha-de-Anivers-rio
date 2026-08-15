@@ -880,15 +880,17 @@
 
       movementHistory.push({ x, y, t: now });
 
-      // Mantém somente os últimos ~900 ms.
+      // Mantém somente os últimos ~1200 ms. Em pouca luz a detecção falha
+      // mais vezes entre frames, então uma janela maior dá mais chances de
+      // acumular amostras válidas suficientes pra reconhecer o gesto.
       while (
         movementHistory.length &&
-        now - movementHistory[0].t > 900
+        now - movementHistory[0].t > 1200
       ) {
         movementHistory.shift();
       }
 
-      if (movementHistory.length < 5) {
+      if (movementHistory.length < 3) {
         setStatus("Mova a mão da esquerda para a direita →");
         return;
       }
@@ -909,9 +911,9 @@
       const duration = last.t - first.t;
 
       if (
-        horizontalDistance > 0.32 &&
-        verticalDrift < 0.24 &&
-        duration < 1400
+        horizontalDistance > 0.22 &&
+        verticalDrift < 0.32 &&
+        duration < 1800
       ) {
         openLetter();
       } else {
