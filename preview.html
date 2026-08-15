@@ -668,6 +668,7 @@
     let heartCompleted = false;
     let heartHoldStart = null;
     let heartLastShapedAt = null;
+    let heartMetricsBuffer = [];
 
     // Histórico do centro da mão.
     const movementHistory = [];
@@ -784,29 +785,46 @@
       if (!result.landmarks || result.landmarks.length < 2) {
         heartHoldStart = null;
         heartLastShapedAt = null;
+        heartMetricsBuffer = [];
         setStatus("Mostre as duas mãos.");
         heartHint.textContent = "Mostre as duas mãos.";
         return;
       }
 
-      const { thumbDist, topDist, wristDist, verticalGap } =
-        heartMetrics(result.landmarks);
-
-      // Limiares tolerantes: com pouca luz o rastreamento da mão fica mais
-      // ruidoso, então exigir uma forma quase perfeita fazia o gesto nunca
-      // "pegar". Isso aceita um coração mais aberto/impreciso.
-      const shaped =
-        thumbDist < 0.55 &&
-        topDist < 0.6 &&
-        wristDist > 1.0 &&
-        verticalGap > 0.12;
-
       const now = performance.now();
+      const raw = heartMetrics(result.landmarks);
+
+      // Suaviza o ruído do rastreamento (que piora bastante em pouca luz)
+      // fazendo a média das últimas ~260ms de leituras, em vez de decidir
+      // por um único frame — sem afrouxar a forma exigida do coração.
+      heartMetricsBuffer.push({ ...raw, t: now });
+      while (heartMetricsBuffer.length && now - heartMetricsBuffer[0].t > 260) {
+        heartMetricsBuffer.shift();
+      }
+      const n = heartMetricsBuffer.length;
+      const avg = heartMetricsBuffer.reduce(
+        (sum, m) => ({
+          thumbDist: sum.thumbDist + m.thumbDist / n,
+          topDist: sum.topDist + m.topDist / n,
+          wristDist: sum.wristDist + m.wristDist / n,
+          verticalGap: sum.verticalGap + m.verticalGap / n
+        }),
+        { thumbDist: 0, topDist: 0, wristDist: 0, verticalGap: 0 }
+      );
+
+      // Exige de fato o formato de coração — polegares e indicadores
+      // próximos, indicadores nitidamente acima dos polegares — pra não
+      // confundir "duas mãos próximas" com o gesto em si.
+      const shaped =
+        avg.thumbDist < 0.42 &&
+        avg.topDist < 0.48 &&
+        avg.wristDist > 1.15 &&
+        avg.verticalGap > 0.22;
 
       if (!shaped) {
-        // Tolera até 300ms de leitura ruim (tremulação do rastreamento)
+        // Tolera até 400ms de leitura ruim (tremulação do rastreamento)
         // antes de zerar o progresso, em vez de reiniciar a cada frame ruim.
-        if (heartLastShapedAt !== null && now - heartLastShapedAt < 300) {
+        if (heartLastShapedAt !== null && now - heartLastShapedAt < 400) {
           return;
         }
         heartHoldStart = null;
