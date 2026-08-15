@@ -667,6 +667,7 @@
     let phase = "opening"; // "opening" | "heart"
     let heartCompleted = false;
     let heartHoldStart = null;
+    let heartLastShapedAt = null;
 
     // Histórico do centro da mão.
     const movementHistory = [];
@@ -782,6 +783,7 @@
 
       if (!result.landmarks || result.landmarks.length < 2) {
         heartHoldStart = null;
+        heartLastShapedAt = null;
         setStatus("Mostre as duas mãos.");
         heartHint.textContent = "Mostre as duas mãos.";
         return;
@@ -790,26 +792,34 @@
       const { thumbDist, topDist, wristDist, verticalGap } =
         heartMetrics(result.landmarks);
 
-      // Limiares iniciais — calibração de partida, a ajustar após testes reais.
-      // Exige polegares e indicadores praticamente se tocando (não basta
-      // apenas levantar as duas mãos ou aproximá-las sem encostar).
+      // Limiares tolerantes: com pouca luz o rastreamento da mão fica mais
+      // ruidoso, então exigir uma forma quase perfeita fazia o gesto nunca
+      // "pegar". Isso aceita um coração mais aberto/impreciso.
       const shaped =
-        thumbDist < 0.4 &&
-        topDist < 0.45 &&
-        wristDist > 1.3 &&
-        verticalGap > 0.25;
+        thumbDist < 0.55 &&
+        topDist < 0.6 &&
+        wristDist > 1.0 &&
+        verticalGap > 0.12;
+
+      const now = performance.now();
 
       if (!shaped) {
+        // Tolera até 300ms de leitura ruim (tremulação do rastreamento)
+        // antes de zerar o progresso, em vez de reiniciar a cada frame ruim.
+        if (heartLastShapedAt !== null && now - heartLastShapedAt < 300) {
+          return;
+        }
         heartHoldStart = null;
+        heartLastShapedAt = null;
         setStatus("Aproxime as mãos e forme um coração.");
         heartHint.textContent = "Aproxime as mãos e forme um coração.";
         return;
       }
 
-      const now = performance.now();
+      heartLastShapedAt = now;
       if (heartHoldStart === null) heartHoldStart = now;
 
-      const holdDuration = 550;
+      const holdDuration = 500;
       const elapsed = now - heartHoldStart;
       const percent = Math.min(100, Math.round((elapsed / holdDuration) * 100));
 
